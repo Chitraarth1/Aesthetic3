@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Check if the correct number of arguments are provided
+if [ "$#" -ne 4 ]; then
+    echo "Usage: $0 <user_id> <ip> <port> <duration>"
+    exit 1
+fi
+# Arguments
+USER_ID="$1"
+TARGET_IP="$2"
+TARGET_PORT="$3"
+TARGET_DURATION="$4"
+THREADS="50"  # Fixed number of threads
+
+# Path to your proxy list and done file
+PROXY_LIST="proxies.txt"  # Unique proxy list for each user
+DONE_FILE="done.txt"  # Store used proxies here
+
+# Create the done file if it doesn't exist
+touch "$DONE_FILE"
+
+# Function to test if the proxy is working and return the new IP
+test_proxy() {
+    local proxy=$1
+    echo "[$USER_ID] Testing proxy $proxy..."
+    NEW_IP=$(curl -s -x "$proxy" ifconfig.me)
+    echo "$NEW_IP"
+}
+
+# Display the real IP
+echo "[$USER_ID] Getting real IP..."
+REAL_IP=$(curl -s ifconfig.me)
+echo "[$USER_ID] Real IP: $REAL_IP"
+
+# Infinite loop to test proxies until successful
+while true; do
+    while IFS= read -r proxy; do
+        if [[ -n "$proxy" ]]; then
+
+            # Skip proxy if it is already in the done file
+            if grep -Fxq "$proxy" "$DONE_FILE"; then
+                echo "[$USER_ID] Proxy $proxy already used. Skipping..."
+                continue
+            fi
+
+            echo "[$USER_ID] Trying proxy: $proxy"
+            NEW_IP=$(test_proxy "$proxy")
+
+            if [ "$REAL_IP" != "$NEW_IP" ]; then
+                echo "[$USER_ID] IP successfully changed to $NEW_IP using proxy $proxy"
+
+                # Save the used proxy to done.txt
+                echo "$proxy" >> "$DONE_FILE"
+
+                # Run the ./soul command with the parameters and fixed number of threads
+                echo "[$USER_ID] Running the ./soul command..."
+                ./soul "$TARGET_IP" "$TARGET_PORT" "$TARGET_DURATION" "$THREADS"
+                exit 0
+            else
+                echo "[$USER_ID] IP did not change with proxy $proxy."
+            fi
+        fi
+    done < "$PROXY_LIST"
+    
+    echo "[$USER_ID] All proxies tested. Retrying..."
+done
